@@ -476,6 +476,7 @@ def enrolar_organizador_view():
 def inscripciones_asistencia_view(usuario_id: int):
     st.subheader("👨‍🎓 Inscripciones y asistencia")
 
+    # Eventos activos donde el organizador tiene acceso
     eventos = get_eventos_para_organizador(usuario_id)
     if not eventos:
         st.info("No tienes eventos activos para revisar.")
@@ -489,72 +490,68 @@ def inscripciones_asistencia_view(usuario_id: int):
     )
     evento_id = mapa_eventos[evento_label]
 
-    # ----- Alumnos registrados -----
-    st.markdown("### 📝 Alumnos registrados")
+    st.markdown(f"### Evento seleccionado: {evento_label}")
 
+    # ==============================
+    # Consulta a eventos_asistentes
+    # ==============================
     try:
-        reg_res = (
-            supabase.table("eventos_inscripciones")
-            .select("id, usuario_id, fecha_registro, estado, usuarios(nombres,apellidos,correo)")
+        res = (
+            supabase.table("eventos_asistentes")
+            .select(
+                "evento_id, usuario_id, registrado_en, estado, "
+                "usuarios(nombres,apellidos,correo,username)"
+            )
             .eq("evento_id", evento_id)
             .execute()
         )
-        registros = reg_res.data or []
+        registros = res.data or []
     except Exception as e:
         registros = []
-        st.error(f"Error al obtener inscripciones: {e}")
+        st.error(f"Error al obtener datos de eventos_asistentes: {e}")
 
-    filas_reg = []
+    # Separar en registrados vs asistidos
+    registrados = []
+    asistidos = []
+
     for r in registros:
         u = r.get("usuarios") or {}
         nombre_completo = f"{u.get('nombres','')} {u.get('apellidos','')}".strip()
-        filas_reg.append(
-            {
-                "ID usuario": r["usuario_id"],
-                "Nombre": nombre_completo,
-                "Correo": u.get("correo", ""),
-                "Fecha registro": r.get("fecha_registro", ""),
-                "Estado": r.get("estado", ""),
-            }
-        )
+        fila = {
+            "ID usuario": r["usuario_id"],
+            "Username": u.get("username", ""),
+            "Nombre": nombre_completo,
+            "Correo": u.get("correo", ""),
+            "Registrado en": r.get("registrado_en", ""),
+            "Estado": r.get("estado", ""),
+        }
 
-    if filas_reg:
-        st.table(filas_reg)
+        if r.get("estado") == "ASISTIDO":
+            asistidos.append(fila)
+        else:
+            # Todo lo que no sea ASISTIDO lo consideramos solo registrado
+            registrados.append(fila)
+
+    # ==============================
+    # Tabla de registrados
+    # ==============================
+    st.markdown("### 📝 Estudiantes registrados (no asistidos)")
+
+    if registrados:
+        st.table(registrados)
     else:
-        st.info("No hay alumnos registrados para este evento.")
+        st.info("No hay estudiantes solo registrados para este evento.")
 
-    # ----- Alumnos asistentes -----
-    st.markdown("### ✅ Alumnos que asistieron")
+    # ==============================
+    # Tabla de asistidos
+    # ==============================
+    st.markdown("### ✅ Estudiantes que asistieron")
 
-    try:
-        asis_res = (
-            supabase.table("eventos_asistencias")
-            .select("id, usuario_id, fecha_asistencia, usuarios(nombres,apellidos,correo)")
-            .eq("evento_id", evento_id)
-            .execute()
-        )
-        asistencias = asis_res.data or []
-    except Exception as e:
-        asistencias = []
-        st.error(f"Error al obtener asistencias: {e}")
-
-    filas_asis = []
-    for a in asistencias:
-        u = a.get("usuarios") or {}
-        nombre_completo = f"{u.get('nombres','')} {u.get('apellidos','')}".strip()
-        filas_asis.append(
-            {
-                "ID usuario": a["usuario_id"],
-                "Nombre": nombre_completo,
-                "Correo": u.get("correo", ""),
-                "Fecha asistencia": a.get("fecha_asistencia", ""),
-            }
-        )
-
-    if filas_asis:
-        st.table(filas_asis)
+    if asistidos:
+        st.table(asistidos)
     else:
-        st.info("No hay alumnos marcados como asistentes para este evento.")
+        st.info("No hay estudiantes marcados como asistentes para este evento.")
+
 
 
 # ==========================
