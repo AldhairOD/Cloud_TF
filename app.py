@@ -154,7 +154,11 @@ def crear_evento_form(usuario_id: int):
         orgs = get_organizaciones()
         if orgs:
             org_map = {o["nombre"]: o["id"] for o in orgs}
-            org_label = st.selectbox("Organización", list(org_map.keys()), key="org_crear")
+            org_label = st.selectbox(
+                "Organización",
+                list(org_map.keys()),
+                key="org_crear"
+            )
             org_id = org_map[org_label]
 
             # Facultades de esa organización (opcional)
@@ -165,7 +169,11 @@ def crear_evento_form(usuario_id: int):
                 fac_options.append(f["nombre"])
                 fac_map[f["nombre"]] = f["id"]
 
-            fac_label = st.selectbox("Facultad (opcional)", fac_options, key="fac_crear")
+            fac_label = st.selectbox(
+                "Facultad (opcional)",
+                fac_options,
+                key="fac_crear"
+            )
             facultad_id = fac_map[fac_label]
         else:
             st.info("No hay organizaciones configuradas todavía.")
@@ -317,10 +325,11 @@ def editar_evento_view():
                 "Organización",
                 org_options,
                 index=org_options.index(org_label_default),
+                key="org_editar"
             )
             org_id = org_map[org_label]
         elif org_options:
-            org_label = st.selectbox("Organización", org_options)
+            org_label = st.selectbox("Organización", org_options, key="org_editar")
             org_id = org_map[org_label]
         else:
             st.info("No hay organizaciones configuradas.")
@@ -344,9 +353,14 @@ def editar_evento_view():
                 "Facultad (opcional)",
                 fac_options,
                 index=fac_options.index(fac_name_actual),
+                key="fac_editar"
             )
         else:
-            fac_label = st.selectbox("Facultad (opcional)", fac_options)
+            fac_label = st.selectbox(
+                "Facultad (opcional)",
+                fac_options,
+                key="fac_editar"
+            )
 
         facultad_id = fac_map[fac_label]
 
@@ -420,9 +434,9 @@ def enrolar_organizador_view():
     except Exception:
         enrolados_ids = set()
 
-    # Traemos todos los organizadores
+    # Traemos solo los ORGANIZADORES (rol_id = 2 -> ajusta si tu id es otro)
     try:
-        ORG_ROLE_ID = 2  # cambia aquí si tu rol ORGANIZADOR tiene otro id
+        ORG_ROLE_ID = 2
         orgs_res = (
             supabase.table("usuarios")
             .select("id, username, rol_id")
@@ -433,7 +447,6 @@ def enrolar_organizador_view():
     except Exception as e:
         st.error(f"Error al obtener organizadores: {e}")
         return
-
 
     enrolados_nombres = [o["username"] for o in orgs if o["id"] in enrolados_ids]
     st.write("Organizador principal (creador): ", f"**id {creador_id}**")
@@ -471,7 +484,7 @@ def enrolar_organizador_view():
 
 
 # ==========================
-# Ver alumnos registrados / asistentes
+# Ver alumnos registrados / asistentes (eventos_asistentes)
 # ==========================
 def inscripciones_asistencia_view(usuario_id: int):
     st.subheader("👨‍🎓 Inscripciones y asistencia")
@@ -492,9 +505,7 @@ def inscripciones_asistencia_view(usuario_id: int):
 
     st.markdown(f"### Evento seleccionado: {evento_label}")
 
-    # ==============================
     # Consulta a eventos_asistentes
-    # ==============================
     try:
         res = (
             supabase.table("eventos_asistentes")
@@ -510,7 +521,6 @@ def inscripciones_asistencia_view(usuario_id: int):
         registros = []
         st.error(f"Error al obtener datos de eventos_asistentes: {e}")
 
-    # Separar en registrados vs asistidos
     registrados = []
     asistidos = []
 
@@ -529,29 +539,19 @@ def inscripciones_asistencia_view(usuario_id: int):
         if r.get("estado") == "ASISTIDO":
             asistidos.append(fila)
         else:
-            # Todo lo que no sea ASISTIDO lo consideramos solo registrado
             registrados.append(fila)
 
-    # ==============================
-    # Tabla de registrados
-    # ==============================
     st.markdown("### 📝 Estudiantes registrados (no asistidos)")
-
     if registrados:
         st.table(registrados)
     else:
         st.info("No hay estudiantes solo registrados para este evento.")
 
-    # ==============================
-    # Tabla de asistidos
-    # ==============================
     st.markdown("### ✅ Estudiantes que asistieron")
-
     if asistidos:
         st.table(asistidos)
     else:
         st.info("No hay estudiantes marcados como asistentes para este evento.")
-
 
 
 # ==========================
