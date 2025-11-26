@@ -508,19 +508,77 @@ def enrolar_organizador_view():
 def dashboard_view(usuario_id: int):
     st.subheader("📊 Dashboard general de eventos")
 
+    # Eventos a los que tiene acceso el organizador
     eventos = get_eventos_para_organizador(usuario_id)
     if not eventos:
         st.info("No tienes eventos activos para mostrar en el dashboard.")
         return
 
-    eventos_dict = {e["id"]: e for e in eventos}
+    org_dict = get_organizaciones_dict()
+    fac_dict = get_facultades_dict()
+
+    # =======================
+    # Filtros superiores
+    # =======================
+    # Organizaciones presentes en estos eventos
+    org_ids_presentes = sorted({e.get("modelo_negocio_id") for e in eventos if e.get("modelo_negocio_id")})
+    opciones_org = ["Todas"]
+    mapa_label_org = {"Todas": None}
+    for oid in org_ids_presentes:
+        nombre = org_dict.get(oid, f"Org {oid}")
+        label = f"{nombre} (id {oid})"
+        opciones_org.append(label)
+        mapa_label_org[label] = oid
+
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        org_sel_label = st.selectbox("Filtrar por organización", opciones_org)
+        org_sel_id = mapa_label_org[org_sel_label]
+
+    # Facultades en los eventos (según filtro de organización)
+    fac_ids_presentes = set()
+    for e in eventos:
+        if org_sel_id and e.get("modelo_negocio_id") != org_sel_id:
+            continue
+        fid = e.get("facultad_id")
+        if fid:
+            fac_ids_presentes.add(fid)
+
+    opciones_fac = ["Todas"]
+    mapa_label_fac = {"Todas": None}
+    for fid in sorted(fac_ids_presentes):
+        nombre = fac_dict.get(fid, f"Facultad {fid}")
+        label = f"{nombre} (id {fid})"
+        opciones_fac.append(label)
+        mapa_label_fac[label] = fid
+
+    with col_f2:
+        fac_sel_label = st.selectbox("Filtrar por facultad", opciones_fac)
+        fac_sel_id = mapa_label_fac[fac_sel_label]
+
+    # Aplicar filtros a la lista de eventos
+    eventos_filtrados = []
+    for e in eventos:
+        if org_sel_id and e.get("modelo_negocio_id") != org_sel_id:
+            continue
+        if fac_sel_id and e.get("facultad_id") != fac_sel_id:
+            continue
+        eventos_filtrados.append(e)
+
+    if not eventos_filtrados:
+        st.info("No hay eventos que cumplan con los filtros seleccionados.")
+        return
+
+    eventos_dict = {e["id"]: e for e in eventos_filtrados}
     eventos_ids = list(eventos_dict.keys())
 
-    # Traer registros de asistencia/registro de esos eventos
+    # =======================
+    # Traer registros de eventos_asistentes
+    # =======================
     try:
         res_asist = (
             supabase.table("eventos_asistentes")
-            .select("evento_id, usuario_id, registrado_en, estado")
+            .select("id, evento_id, usuario_id, registrado_en, estado")
             .in_("evento_id", eventos_ids)
             .execute()
         )
@@ -530,16 +588,21 @@ def dashboard_view(usuario_id: int):
         st.error(f"Error al obtener datos de eventos_asistentes para el dashboard: {e}")
         return
 
-    total_eventos = len(eventos)
+    # =======================
+    # KPIs globales
+    # =======================
+    total_eventos = len(eventos_filtrados)
     total_registros = len(registros)
     total_asistidos = sum(1 for r in registros if r.get("estado") == "ASISTIDO")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Eventos activos", total_eventos)
+    col1.metric("Eventos filtrados", total_eventos)
     col2.metric("Registros totales", total_registros)
     col3.metric("Asistencias totales", total_asistidos)
 
-    # Agregar resumen por evento
+    # =======================
+    # Resumen por evento
+    # =======================
     resumen = {}
     for e_id in eventos_ids:
         resumen[e_id] = {"registrados": 0, "asistidos": 0}
@@ -558,6 +621,7 @@ def dashboard_view(usuario_id: int):
         ev = eventos_dict.get(e_id, {})
         filas_resumen.append(
             {
+                "Evento_id": e_id,
                 "Evento": ev.get("nombre", f"Evento {e_id}"),
                 "Registrados": data["registrados"],
                 "Asistidos": data["asistidos"],
@@ -569,13 +633,48 @@ def dashboard_view(usuario_id: int):
     st.markdown("### 📌 Resumen por evento")
     st.dataframe(df_resumen, use_container_width=True)
 
+    # Top N para gráfico (para que escale)
     if not df_resumen.empty:
-        # Gráfico simple de asistentes por evento
-        chart_df = df_resumen.set_index("Evento")[["Registrados", "Asistidos"]]
+        max_n = len(df_resumen)
+        top_n = st.slider(
+            "Mostrar Top N eventos (por asistencias)",
+            min_value=1,
+            max_value=max_n,
+            value=min(10, max_n),
+        )
+
+        df_top = df_resumen.sort_values("Asistidos", ascending=False).head(top_n)
+        chart_df = df_top.set_index("Evento")[["Registrados", "Asistidos"]]
         st.bar_chart(chart_df)
 
-    # ============ Exportar a Excel ============
-    st.markdown("### 📥 Exportar detalle a Excel")
+    # =======================
+    # Detalle por evento
+    # =======================
+    st.markdown("### 🔍 Detalle de un evento")
+
+    opciones_evento = [f"{e['nombre']} (#{e['id']})" for e in eventos_filtrados]
+    mapa_evt = {f"{e['nombre']} (#{e['id']})": e["id"] for e in eventos_filtrados}
+
+    evento_det_label = st.selectbox(
+        "Selecciona un evento para ver detalle",
+        opciones_evento,
+        key="evento_detalle_dashboard",
+    )
+    evento_det_id = mapa_evt[evento_det_label]
+
+    # Filtrar registros del evento elegido
+    regs_evt = [r for r in registros if r["evento_id"] == evento_det_id]
+    cant_reg = len(regs_evt)
+    cant_asist = sum(1 for r in regs_evt if r.get("estado") == "ASISTIDO")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Registrados en el evento", cant_reg)
+    c2.metric("Asistencias en el evento", cant_asist)
+
+    # =======================
+    # Exportar a Excel (datos filtrados)
+    # =======================
+    st.markdown("### 📥 Exportar detalle filtrado a Excel")
 
     if not registros:
         st.info("No hay registros para exportar.")
@@ -618,15 +717,14 @@ def dashboard_view(usuario_id: int):
         )
 
     df_excel = pd.DataFrame(filas_excel)
-
     buffer = BytesIO()
     df_excel.to_excel(buffer, index=False)
     buffer.seek(0)
 
     st.download_button(
-        label="Descargar reporte completo en Excel",
+        label="Descargar reporte filtrado en Excel",
         data=buffer,
-        file_name="reporte_eventos.xlsx",
+        file_name="reporte_eventos_filtrado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
