@@ -422,16 +422,18 @@ def enrolar_organizador_view():
 
     # Traemos todos los organizadores
     try:
+        ORG_ROLE_ID = 2  # cambia aquí si tu rol ORGANIZADOR tiene otro id
         orgs_res = (
             supabase.table("usuarios")
-            .select("id,username, rol_id, roles(nombre)")
-            .eq("roles.nombre", "ORGANIZADOR")
+            .select("id, username, rol_id")
+            .eq("rol_id", ORG_ROLE_ID)
             .execute()
         )
         orgs = orgs_res.data or []
     except Exception as e:
         st.error(f"Error al obtener organizadores: {e}")
         return
+
 
     enrolados_nombres = [o["username"] for o in orgs if o["id"] in enrolados_ids]
     st.write("Organizador principal (creador): ", f"**id {creador_id}**")
