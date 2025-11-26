@@ -154,7 +154,7 @@ def crear_evento_form(usuario_id: int):
         orgs = get_organizaciones()
         if orgs:
             org_map = {o["nombre"]: o["id"] for o in orgs}
-            org_label = st.selectbox("Organización", list(org_map.keys()))
+            org_label = st.selectbox("Organización", list(org_map.keys()), key="org_crear")
             org_id = org_map[org_label]
 
             # Facultades de esa organización (opcional)
@@ -165,7 +165,7 @@ def crear_evento_form(usuario_id: int):
                 fac_options.append(f["nombre"])
                 fac_map[f["nombre"]] = f["id"]
 
-            fac_label = st.selectbox("Facultad (opcional)", fac_options)
+            fac_label = st.selectbox("Facultad (opcional)", fac_options, key="fac_crear")
             facultad_id = fac_map[fac_label]
         else:
             st.info("No hay organizaciones configuradas todavía.")
@@ -399,7 +399,11 @@ def enrolar_organizador_view():
         return
 
     mapa_eventos = {f"{e['nombre']} (#{e['id']})": e for e in eventos}
-    evento_label = st.selectbox("Selecciona evento", list(mapa_eventos.keys()))
+    evento_label = st.selectbox(
+        "Selecciona evento",
+        list(mapa_eventos.keys()),
+        key="evento_enrolar"
+    )
     evento = mapa_eventos[evento_label]
     evento_id = evento["id"]
     creador_id = evento["usuario_creador_id"]
@@ -476,7 +480,11 @@ def inscripciones_asistencia_view(usuario_id: int):
         return
 
     mapa_eventos = {f"{e['nombre']} (#{e['id']})": e["id"] for e in eventos}
-    evento_label = st.selectbox("Selecciona evento", list(mapa_eventos.keys()))
+    evento_label = st.selectbox(
+        "Selecciona evento",
+        list(mapa_eventos.keys()),
+        key="evento_inscripciones"
+    )
     evento_id = mapa_eventos[evento_label]
 
     # ----- Alumnos registrados -----
