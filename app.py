@@ -5,9 +5,9 @@ import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# -------------------------
+# ==========================
 # Cargar variables de entorno
-# -------------------------
+# ==========================
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -19,37 +19,20 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# -------------------------
-# Helpers de sesión
-# -------------------------
+
+# ==========================
+# Manejo de sesión
+# ==========================
 def init_session():
-    if "user" not in st.session_state:
-        st.session_state.user = None
     if "perfil" not in st.session_state:
         st.session_state.perfil = None
     if "evento_edit" not in st.session_state:
         st.session_state.evento_edit = None
 
 
-def cargar_perfil(auth_user_id):
-    """
-    Obtiene el perfil del usuario desde la tabla public.usuarios,
-    junto con el nombre del rol (tabla roles).
-    """
-    res = (
-        supabase.table("usuarios")
-        .select("*, roles(nombre)")
-        .eq("auth_user_id", auth_user_id)
-        .execute()
-    )
-    if res.data:
-        return res.data[0]
-    return None
-
-
-# -------------------------
-# Login con Supabase Auth
-# -------------------------
+# ==========================
+# LOGIN contra public.usuarios
+# ==========================
 def login_view():
     st.title("Gestión de Eventos - Login")
 
@@ -62,6 +45,7 @@ def login_view():
             return
 
         try:
+            # Buscamos en la tabla usuarios + rol asociado
             res = (
                 supabase.table("usuarios")
                 .select("*, roles(nombre)")
@@ -75,10 +59,7 @@ def login_view():
                 return
 
             perfil = res.data[0]
-            # Guardamos el perfil directamente en sesión
-            st.session_state.user = perfil  # opcional, por compatibilidad
             st.session_state.perfil = perfil
-
             st.success("Inicio de sesión correcto.")
             st.rerun()
 
@@ -86,16 +67,16 @@ def login_view():
             st.error(f"Error al intentar iniciar sesión: {e}")
 
 
-
-# -------------------------
-# Lógica de acceso a eventos
-# -------------------------
+# ==========================
+# Funciones de eventos
+# ==========================
 def get_eventos_para_organizador(usuario_id: int):
     """
     Devuelve la lista de eventos a los que un organizador tiene acceso:
-      - los que él creó
-      - los que están en eventos_organizadores
+      - Eventos que él creó (usuario_creador_id)
+      - Eventos donde está enrolado en eventos_organizadores
     """
+    # Eventos creados por el usuario
     r1 = (
         supabase.table("eventos")
         .select("*")
@@ -103,6 +84,7 @@ def get_eventos_para_organizador(usuario_id: int):
         .execute()
     )
 
+    # Eventos donde está enrolado
     r2 = (
         supabase.table("eventos")
         .select("*, eventos_organizadores!inner(usuario_id)")
@@ -119,9 +101,6 @@ def get_eventos_para_organizador(usuario_id: int):
     return list(eventos.values())
 
 
-# -------------------------
-# Formularios de eventos
-# -------------------------
 def crear_evento_form(usuario_id: int):
     st.subheader("Crear nuevo evento")
 
@@ -146,22 +125,29 @@ def crear_evento_form(usuario_id: int):
             "limite_asistentes": None if limite == 0 else int(limite),
         }
 
-        res = supabase.table("eventos").insert(data).execute()
-        if res.data:
-            st.success("Evento creado correctamente.")
-            st.rerun()
-        else:
-            st.error("No se pudo crear el evento.")
+        try:
+            res = supabase.table("eventos").insert(data).execute()
+            if res.data:
+                st.success("Evento creado correctamente.")
+                st.rerun()
+            else:
+                st.error("No se pudo crear el evento.")
+        except Exception as e:
+            st.error(f"Error al crear evento: {e}")
 
 
 def lista_eventos_view(usuario_id: int, es_organizador: bool):
     st.subheader("Eventos")
 
-    if es_organizador:
-        eventos = get_eventos_para_organizador(usuario_id)
-    else:
-        # Estudiante: por ahora ve todos los eventos
-        eventos = supabase.table("eventos").select("*").execute().data
+    try:
+        if es_organizador:
+            eventos = get_eventos_para_organizador(usuario_id)
+        else:
+            # Por ahora, el estudiante ve todos los eventos
+            eventos = supabase.table("eventos").select("*").execute().data
+    except Exception as e:
+        st.error(f"Error al obtener eventos: {e}")
+        return
 
     if not eventos:
         st.info("No hay eventos para mostrar.")
@@ -181,25 +167,32 @@ def lista_eventos_view(usuario_id: int, es_organizador: bool):
                         st.session_state.evento_edit = ev
                 with col2:
                     if st.button(f"Eliminar #{ev['id']}", key=f"del_{ev['id']}"):
-                        supabase.table("eventos").delete().eq("id", ev["id"]).execute()
-                        st.success("Evento eliminado.")
-                        st.rerun()
+                        try:
+                            supabase.table("eventos").delete().eq("id", ev["id"]).execute()
+                            st.success("Evento eliminado.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al eliminar evento: {e}")
 
         st.divider()
 
 
 def editar_evento_view():
-    ev = st.session_state.get("evento_edit")
+    ev = st.session_state.evento_edit
     if not ev:
         return
 
     st.subheader(f"Editar evento #{ev['id']} - {ev['nombre']}")
 
+    # fecha_evento viene como string tipo '2025-01-01'
+    try:
+        fecha_val = date.fromisoformat(ev["fecha_evento"])
+    except Exception:
+        # por si viene ya como date
+        fecha_val = ev["fecha_evento"]
+
     nombre = st.text_input("Nombre del evento", value=ev["nombre"])
-    fecha_evento = st.date_input(
-        "Fecha del evento",
-        value=date.fromisoformat(ev["fecha_evento"]),
-    )
+    fecha_evento = st.date_input("Fecha del evento", value=fecha_val)
     limite_actual = ev["limite_asistentes"] if ev["limite_asistentes"] is not None else 0
     limite = st.number_input(
         "Límite de asistentes (0 = ilimitado)",
@@ -217,30 +210,35 @@ def editar_evento_view():
                 "limite_asistentes": None if limite == 0 else int(limite),
                 "actualizado_en": "now()",
             }
-            supabase.table("eventos").update(data).eq("id", ev["id"]).execute()
-            st.success("Evento actualizado.")
-            st.session_state.evento_edit = None
-            st.rerun()
+            try:
+                supabase.table("eventos").update(data).eq("id", ev["id"]).execute()
+                st.success("Evento actualizado.")
+                st.session_state.evento_edit = None
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al actualizar evento: {e}")
+
     with col2:
         if st.button("Cancelar edición"):
             st.session_state.evento_edit = None
             st.rerun()
 
 
-# -------------------------
-# Enrolar organizadores a eventos
-# -------------------------
 def enrolar_organizador_view():
     st.subheader("Enrolar organizador a evento")
 
-    eventos = supabase.table("eventos").select("id,nombre").execute().data
-    orgs = (
-        supabase.table("usuarios")
-        .select("id,username,rol_id, roles(nombre)")
-        .eq("roles.nombre", "ORGANIZADOR")
-        .execute()
-        .data
-    )
+    try:
+        eventos = supabase.table("eventos").select("id,nombre").execute().data
+        orgs = (
+            supabase.table("usuarios")
+            .select("id,username, rol_id, roles(nombre)")
+            .eq("roles.nombre", "ORGANIZADOR")
+            .execute()
+            .data
+        )
+    except Exception as e:
+        st.error(f"Error al obtener datos para enrolar: {e}")
+        return
 
     if not eventos:
         st.info("No hay eventos disponibles.")
@@ -260,13 +258,16 @@ def enrolar_organizador_view():
             "evento_id": mapa_eventos[evento_label],
             "usuario_id": mapa_orgs[org_label],
         }
-        supabase.table("eventos_organizadores").upsert(data).execute()
-        st.success("Organizador enrolado al evento.")
+        try:
+            supabase.table("eventos_organizadores").upsert(data).execute()
+            st.success("Organizador enrolado al evento.")
+        except Exception as e:
+            st.error(f"Error al enrolar organizador: {e}")
 
 
-# -------------------------
-# Home principal (después de login)
-# -------------------------
+# ==========================
+# Pantalla principal
+# ==========================
 def main_app():
     perfil = st.session_state.perfil
     rol_nombre = perfil["roles"]["nombre"]
@@ -275,15 +276,14 @@ def main_app():
     st.sidebar.write(f"Usuario: **{perfil['username']}**")
     st.sidebar.write(f"Rol: **{rol_nombre}**")
 
-     if st.sidebar.button("Cerrar sesión"):
-        st.session_state.user = None
+    if st.sidebar.button("Cerrar sesión"):
         st.session_state.perfil = None
         st.session_state.evento_edit = None
         st.rerun()
 
     st.title("Sistema de Gestión de Eventos")
 
-    es_organizador = rol_nombre == "ORGANIZADOR"
+    es_organizador = (rol_nombre == "ORGANIZADOR")
 
     if es_organizador:
         st.header("Organizador")
@@ -298,9 +298,9 @@ def main_app():
         lista_eventos_view(perfil["id"], es_organizador=False)
 
 
-# -------------------------
+# ==========================
 # Punto de entrada
-# -------------------------
+# ==========================
 def main():
     init_session()
 
