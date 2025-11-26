@@ -4,7 +4,9 @@ from datetime import date
 import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv
-import bcrypt  # <-- para comparar contraseñas encriptadas
+import bcrypt  # para comparar contraseñas encriptadas
+import pandas as pd
+from io import BytesIO
 
 # ==========================
 # Cargar variables de entorno
@@ -501,6 +503,136 @@ def enrolar_organizador_view():
 
 
 # ==========================
+# Dashboard general (organizador) + exportar Excel
+# ==========================
+def dashboard_view(usuario_id: int):
+    st.subheader("📊 Dashboard general de eventos")
+
+    eventos = get_eventos_para_organizador(usuario_id)
+    if not eventos:
+        st.info("No tienes eventos activos para mostrar en el dashboard.")
+        return
+
+    eventos_dict = {e["id"]: e for e in eventos}
+    eventos_ids = list(eventos_dict.keys())
+
+    # Traer registros de asistencia/registro de esos eventos
+    try:
+        res_asist = (
+            supabase.table("eventos_asistentes")
+            .select("id, evento_id, usuario_id, registrado_en, estado")
+            .in_("evento_id", eventos_ids)
+            .execute()
+        )
+        registros = res_asist.data or []
+    except Exception as e:
+        registros = []
+        st.error(f"Error al obtener datos de eventos_asistentes para el dashboard: {e}")
+        return
+
+    total_eventos = len(eventos)
+    total_registros = len(registros)
+    total_asistidos = sum(1 for r in registros if r.get("estado") == "ASISTIDO")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Eventos activos", total_eventos)
+    col2.metric("Registros totales", total_registros)
+    col3.metric("Asistencias totales", total_asistidos)
+
+    # Agregar resumen por evento
+    resumen = {}
+    for e_id in eventos_ids:
+        resumen[e_id] = {"registrados": 0, "asistidos": 0}
+
+    for r in registros:
+        e_id = r["evento_id"]
+        if e_id not in resumen:
+            resumen[e_id] = {"registrados": 0, "asistidos": 0}
+        if r.get("estado") == "ASISTIDO":
+            resumen[e_id]["asistidos"] += 1
+        else:
+            resumen[e_id]["registrados"] += 1
+
+    filas_resumen = []
+    for e_id, data in resumen.items():
+        ev = eventos_dict.get(e_id, {})
+        filas_resumen.append(
+            {
+                "Evento": ev.get("nombre", f"Evento {e_id}"),
+                "Registrados": data["registrados"],
+                "Asistidos": data["asistidos"],
+            }
+        )
+
+    df_resumen = pd.DataFrame(filas_resumen)
+
+    st.markdown("### 📌 Resumen por evento")
+    st.dataframe(df_resumen, use_container_width=True)
+
+    if not df_resumen.empty:
+        # Gráfico simple de asistentes por evento
+        chart_df = df_resumen.set_index("Evento")[["Registrados", "Asistidos"]]
+        st.bar_chart(chart_df)
+
+    # ============ Exportar a Excel ============
+    st.markdown("### 📥 Exportar detalle a Excel")
+
+    if not registros:
+        st.info("No hay registros para exportar.")
+        return
+
+    # Traer datos de usuarios para enriquecer el Excel
+    user_ids = list({r["usuario_id"] for r in registros})
+    try:
+        res_users = (
+            supabase.table("usuarios")
+            .select("id, username, nombres, apellidos, correo")
+            .in_("id", user_ids)
+            .execute()
+        )
+        usuarios_rows = res_users.data or []
+    except Exception as e:
+        usuarios_rows = []
+        st.error(f"Error al obtener usuarios para el Excel: {e}")
+        return
+
+    usuarios_dict = {u["id"]: u for u in usuarios_rows}
+
+    filas_excel = []
+    for r in registros:
+        ev = eventos_dict.get(r["evento_id"], {})
+        u = usuarios_dict.get(r["usuario_id"], {})
+
+        filas_excel.append(
+            {
+                "ID evento": r["evento_id"],
+                "Nombre evento": ev.get("nombre", ""),
+                "Fecha evento": ev.get("fecha_evento", ""),
+                "ID usuario": r["usuario_id"],
+                "Username": u.get("username", ""),
+                "Nombre completo": f"{u.get('nombres','')} {u.get('apellidos','')}".strip(),
+                "Correo": u.get("correo", ""),
+                "Estado": r.get("estado", ""),
+                "Registrado en": r.get("registrado_en", ""),
+            }
+        )
+
+    df_excel = pd.DataFrame(filas_excel)
+
+    buffer = BytesIO()
+    df_excel.to_excel(buffer, index=False)
+    buffer.seek(0)
+
+    st.download_button(
+        label="Descargar reporte completo en Excel",
+        data=buffer,
+        file_name="reporte_eventos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+
+
+# ==========================
 # Ver alumnos registrados / asistentes (eventos_asistentes)
 # ==========================
 def inscripciones_asistencia_view(usuario_id: int):
@@ -591,15 +723,22 @@ def main_app():
     es_organizador = (rol_nombre == "ORGANIZADOR")
 
     if es_organizador:
-        pestañas = st.tabs(["Mis eventos", "Enrolar organizadores", "Inscripciones y asistencia"])
+        pestañas = st.tabs([
+            "Dashboard",
+            "Mis eventos",
+            "Enrolar organizadores",
+            "Inscripciones y asistencia"
+        ])
         with pestañas[0]:
+            dashboard_view(perfil["id"])
+        with pestañas[1]:
             crear_evento_form(perfil["id"])
             st.divider()
             lista_eventos_view(perfil["id"], es_organizador=True)
             editar_evento_view()
-        with pestañas[1]:
-            enrolar_organizador_view()
         with pestañas[2]:
+            enrolar_organizador_view()
+        with pestañas[3]:
             inscripciones_asistencia_view(perfil["id"])
     else:
         st.header("Vista estudiante")
