@@ -53,30 +53,38 @@ def cargar_perfil(auth_user_id):
 def login_view():
     st.title("Gestión de Eventos - Login")
 
-    email = st.text_input("Correo electrónico")
+    username = st.text_input("Usuario")
     password = st.text_input("Contraseña", type="password")
 
     if st.button("Ingresar"):
+        if not username or not password:
+            st.error("Completa usuario y contraseña.")
+            return
+
         try:
-            auth_res = supabase.auth.sign_in_with_password(
-                {"email": email, "password": password}
+            res = (
+                supabase.table("usuarios")
+                .select("*, roles(nombre)")
+                .eq("username", username)
+                .eq("password", password)
+                .execute()
             )
-            user = auth_res.user
-            if user is None:
+
+            if not res.data:
                 st.error("Credenciales inválidas.")
                 return
 
-            perfil = cargar_perfil(user.id)
-            if not perfil:
-                st.error("No se encontró perfil asociado en la tabla 'usuarios'.")
-                return
-
-            st.session_state.user = user
+            perfil = res.data[0]
+            # Guardamos el perfil directamente en sesión
+            st.session_state.user = perfil  # opcional, por compatibilidad
             st.session_state.perfil = perfil
+
             st.success("Inicio de sesión correcto.")
             st.rerun()
+
         except Exception as e:
-            st.error(f"Error de autenticación: {e}")
+            st.error(f"Error al intentar iniciar sesión: {e}")
+
 
 
 # -------------------------
@@ -267,8 +275,7 @@ def main_app():
     st.sidebar.write(f"Usuario: **{perfil['username']}**")
     st.sidebar.write(f"Rol: **{rol_nombre}**")
 
-    if st.sidebar.button("Cerrar sesión"):
-        supabase.auth.sign_out()
+     if st.sidebar.button("Cerrar sesión"):
         st.session_state.user = None
         st.session_state.perfil = None
         st.session_state.evento_edit = None
@@ -297,7 +304,7 @@ def main_app():
 def main():
     init_session()
 
-    if st.session_state.user is None:
+    if st.session_state.perfil is None:
         login_view()
     else:
         main_app()
