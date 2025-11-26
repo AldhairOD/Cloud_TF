@@ -578,7 +578,7 @@ def dashboard_view(usuario_id: int):
     try:
         res_asist = (
             supabase.table("eventos_asistentes")
-            .select("id, evento_id, usuario_id, registrado_en, estado")
+            .select("evento_id, usuario_id, registrado_en, estado")
             .in_("evento_id", eventos_ids)
             .execute()
         )
