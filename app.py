@@ -4,6 +4,7 @@ from datetime import date
 import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv
+import bcrypt  # <-- para comparar contraseñas encriptadas
 
 # ==========================
 # Cargar variables de entorno
@@ -70,7 +71,7 @@ def init_session():
 
 
 # ==========================
-# LOGIN contra public.usuarios
+# LOGIN contra public.usuarios (bcrypt)
 # ==========================
 def login_view():
     st.title("🎫 Gestión de Eventos - Login")
@@ -86,19 +87,35 @@ def login_view():
             return
 
         try:
+            # Buscamos SOLO por username
             res = (
                 supabase.table("usuarios")
                 .select("*, roles(nombre)")
                 .eq("username", username)
-                .eq("password", password)
                 .execute()
             )
 
             if not res.data:
-                st.error("Credenciales inválidas.")
+                st.error("Usuario no encontrado.")
                 return
 
-            perfil = res.data[0]
+            user_row = res.data[0]
+            stored_hash = user_row.get("password")
+
+            if not stored_hash:
+                st.error("El usuario no tiene contraseña configurada.")
+                return
+
+            # Comparar contraseña ingresada vs hash almacenado
+            if not bcrypt.checkpw(
+                password.encode("utf-8"),
+                stored_hash.encode("utf-8")
+            ):
+                st.error("Contraseña incorrecta.")
+                return
+
+            # Si llegó hasta aquí, login OK
+            perfil = user_row
             st.session_state.perfil = perfil
             st.success("Inicio de sesión correcto.")
             st.rerun()
@@ -505,7 +522,6 @@ def inscripciones_asistencia_view(usuario_id: int):
 
     st.markdown(f"### Evento seleccionado: {evento_label}")
 
-    # Consulta a eventos_asistentes
     try:
         res = (
             supabase.table("eventos_asistentes")
