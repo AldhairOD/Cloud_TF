@@ -634,14 +634,26 @@ def dashboard_view(usuario_id: int):
     st.dataframe(df_resumen, use_container_width=True)
 
     # Top N para gráfico (para que escale)
-    if not df_resumen.empty:
+     if not df_resumen.empty:
         max_n = len(df_resumen)
+
+        # Valor actual guardado (si existe) pero acotado al nuevo máximo
+        valor_actual = st.session_state.get("top_n_slider", min(10, max_n))
+        if valor_actual < 1:
+            valor_actual = 1
+        if valor_actual > max_n:
+            valor_actual = max_n
+
         top_n = st.slider(
             "Mostrar Top N eventos (por asistencias)",
             min_value=1,
             max_value=max_n,
-            value=min(10, max_n),
+            value=valor_actual,
+            key="top_n_slider",
         )
+
+        # Aseguramos que el valor en sesión nunca quede fuera de rango
+        st.session_state.top_n_slider = max(1, min(top_n, max_n))
 
         df_top = df_resumen.sort_values("Asistidos", ascending=False).head(top_n)
         chart_df = df_top.set_index("Evento")[["Registrados", "Asistidos"]]
