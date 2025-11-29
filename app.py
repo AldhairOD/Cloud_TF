@@ -633,23 +633,21 @@ def dashboard_view(usuario_id: int):
     st.markdown("### 📌 Resumen por evento")
     st.dataframe(df_resumen, use_container_width=True)
 
+    # =======================
     # Top N para gráfico (para que escale)
+    # =======================
     if not df_resumen.empty:
         max_n = len(df_resumen)
-
-        # Si el valor guardado ya no es válido con el nuevo max, borramos la clave
-        if "top_n_slider" in st.session_state:
-            if st.session_state.top_n_slider > max_n:
-                del st.session_state["top_n_slider"]
-
         top_n_default = min(10, max_n)
 
+        # etiqueta dinámica -> widget nuevo cuando cambia max_n
+        label_slider = f"Mostrar Top N eventos (por asistencias) [máx {max_n}]"
+
         top_n = st.slider(
-            "Mostrar Top N eventos (por asistencias)",
+            label_slider,
             min_value=1,
             max_value=max_n,
             value=top_n_default,
-            key="top_n_slider",
         )
 
         df_top = df_resumen.sort_values("Asistidos", ascending=False).head(top_n)
@@ -737,6 +735,7 @@ def dashboard_view(usuario_id: int):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
+
 
 
 # ==========================
