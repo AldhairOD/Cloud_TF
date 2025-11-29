@@ -634,23 +634,25 @@ def dashboard_view(usuario_id: int):
     st.dataframe(df_resumen, use_container_width=True)
 
     # =======================
-    # Top N para gráfico (para que escale)
+    # Top N para gráfico (selectbox en lugar de slider)
     # =======================
     if not df_resumen.empty:
         max_n = len(df_resumen)
-        top_n_default = min(10, max_n)
 
-        # etiqueta dinámica -> widget nuevo cuando cambia max_n
-        label_slider = f"Mostrar Top N eventos (por asistencias) [máx {max_n}]"
+        # Opciones de Top N según cuántos eventos haya
+        opciones_top = [n for n in [5, 10, 20] if n <= max_n]
+        opciones_top.append("Todos")
 
-        top_n = st.slider(
-            label_slider,
-            min_value=1,
-            max_value=max_n,
-            value=top_n_default,
+        eleccion_top = st.selectbox(
+            "Mostrar Top N eventos (por asistencias)",
+            opciones_top,
         )
 
-        df_top = df_resumen.sort_values("Asistidos", ascending=False).head(top_n)
+        if eleccion_top == "Todos":
+            df_top = df_resumen.sort_values("Asistidos", ascending=False)
+        else:
+            df_top = df_resumen.sort_values("Asistidos", ascending=False).head(eleccion_top)
+
         chart_df = df_top.set_index("Evento")[["Registrados", "Asistidos"]]
         st.bar_chart(chart_df)
 
@@ -735,7 +737,6 @@ def dashboard_view(usuario_id: int):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
-
 
 
 # ==========================
