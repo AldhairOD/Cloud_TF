@@ -634,7 +634,7 @@ def dashboard_view(usuario_id: int):
     st.dataframe(df_resumen, use_container_width=True)
 
     # Top N para gráfico (para que escale)
-     if not df_resumen.empty:
+    if not df_resumen.empty:
         max_n = len(df_resumen)
 
         # Valor actual guardado (si existe) pero acotado al nuevo máximo
